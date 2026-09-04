@@ -1,6 +1,8 @@
 services:
   rewards-dashboard:
-    image: ghcr.io/mgrimace/rewards-dashboard:latest
+    # 本仓库（Tong068/rewards-dashboard）自动构建的汉化版镜像。
+    # :main 跟随 main 分支每次提交；打过 v* tag 后也可以改用 :latest 或 :v1.3.4。
+    image: ghcr.io/tong068/rewards-dashboard:main
     #build:
     #  context: ./rewards-dashboard
     container_name: rewards-dashboard

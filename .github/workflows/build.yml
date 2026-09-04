@@ -1,0 +1,99 @@
+name: Build (main)
+
+# 每次推送到 main 就自动构建一次开发版镜像，推到 GHCR 的 :main 标签。
+# 正式发布仍然由 release.yml 负责：推 v* tag 时构建 :latest + :<tag> 并建 GitHub Release。
+# 所以 :main = 最新提交，:latest = 最近一次打过 tag 的发布版，两者互不覆盖。
+on:
+  push:
+    branches:
+      - main
+    # 只改文档或 compose 示例时不值得重建镜像；需要时用下面的手动触发。
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "compose.yaml"
+      - "sample-stack-compose.yaml"
+      - "LICENSE"
+  # 允许在 Actions 页面手动点一次构建（不改代码也能重新出镜像）。
+  workflow_dispatch:
+
+# 只需要读代码 + 写包，不建 Release，所以不要 contents: write。
+permissions:
+  contents: read
+  packages: write
+
+# 连续推送时取消还在跑的旧构建，只保留最新一次。
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and push :main
+    runs-on: ubuntu-latest
+
+    steps:
+      # 取代码，作为 Docker 构建上下文
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 开启 arm64 模拟，好在 GitHub 托管的 runner 上出多架构镜像
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 用内置的 GITHUB_TOKEN 登录 GitHub Container Registry
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 镜像名取仓库全名转小写（GHCR 只接受小写），版本号取 main-<短 sha>
+      - name: Prepare image metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "version=main-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # 把版本号写进前端，界面上就能看出跑的是哪个提交
+      - name: Generate frontend version file
+        shell: bash
+        run: |
+          cat > rewards-dashboard/public/version.js <<EOF
+          window.APP_VERSION = "${{ steps.meta.outputs.version }}";
+          EOF
+
+      # 构建并推送多架构镜像：滚动的 :main 加一个带 sha 的固定标签（方便回滚）
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: rewards-dashboard
+          file: rewards-dashboard/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:main
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 在 Actions 摘要页写一行拉取命令，省得回头翻日志
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "### 镜像已推送"
+            echo ""
+            echo '```bash'
+            echo "docker pull ${{ steps.meta.outputs.image }}:main"
+            echo '```'
+            echo ""
+            echo "固定标签：\`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
