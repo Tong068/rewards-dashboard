@@ -1,5 +1,6 @@
 import * as U from "../util.js";
 import { cached } from "../api.js";
+import { t } from "../i18n.js";
 
 let accountsPayload = null;
 let rootEl = null;
@@ -8,18 +9,19 @@ let context = null;
 
 const launching = new Set();
 
-const SOURCE_LABELS = {
-  search: "Search",
-  bonus: "Bonus search",
-  read: "Read",
-  checkIn: "Check-in",
-  claimReward: "Claim reward",
-  claimBonus: "Claim bonus",
-  urlReward: "URL reward",
-  visualSearch: "Visual search",
-  appReward: "App reward",
-  punchcard: "Punchcard",
-  searchOnBing: "Search activity",
+// 积分来源 → 文案 key（文案按当前语言在 sourceBreakdown() 里取）。
+const SOURCE_KEYS = {
+  search: "acc.srcSearch",
+  bonus: "acc.srcBonus",
+  read: "acc.srcRead",
+  checkIn: "acc.srcCheckIn",
+  claimReward: "acc.srcClaimReward",
+  claimBonus: "acc.srcClaimBonus",
+  urlReward: "acc.srcUrlReward",
+  visualSearch: "acc.srcVisualSearch",
+  appReward: "acc.srcAppReward",
+  punchcard: "acc.srcPunchcard",
+  searchOnBing: "acc.srcSearchOnBing",
 };
 
 function controlState() {
@@ -37,7 +39,7 @@ async function runAccount(account) {
   try {
     await context.api.control("start", { accountIndex: account.index });
     context.toast(
-      `Started ACCOUNT_${account.index} only (${account.email}).`,
+      t("ovw.startedOnly", { index: account.index, email: account.email }),
       "success",
     );
     context.invalidate();
@@ -56,18 +58,18 @@ function earnableBadge(account) {
     ? Object.values(earnable).reduce((sum, points) => sum + (Number(points) || 0), 0)
     : 0;
   if (total <= 0) return "";
-  return `<span class="point-source point-source--target"><strong>Earnable</strong> ${U.escapeHtml(U.fmtNumber(total))}</span>`;
+  return `<span class="point-source point-source--target"><strong>${U.escapeHtml(t("acc.earnable"))}</strong> ${U.escapeHtml(U.fmtNumber(total))}</span>`;
 }
 
 // Only sources that actually earned something today — ten "+0" chips per
 // account is noise, not detail.
 function sourceBreakdown(account) {
   const bySource = account.live?.bySource || {};
-  return Object.entries(SOURCE_LABELS)
+  return Object.entries(SOURCE_KEYS)
     .filter(([source]) => Number(bySource[source]) > 0)
     .map(
-      ([source, label]) =>
-        `<span class="point-source"><strong>${U.escapeHtml(label)}</strong> ${U.escapeHtml(U.fmtSigned(Number(bySource[source])))}</span>`,
+      ([source, key]) =>
+        `<span class="point-source"><strong>${U.escapeHtml(t(key))}</strong> ${U.escapeHtml(U.fmtSigned(Number(bySource[source])))}</span>`,
     )
     .join("");
 }
@@ -78,16 +80,21 @@ function protectionPresentation(account) {
   const remaining = account.streakProtectionRemainingDays;
   const days =
     remaining == null
-      ? "days unavailable"
-      : `${remaining} protection day${remaining === 1 ? "" : "s"} left`;
-  const state = account.streakProtectionEnabled ? "On" : "Off";
+      ? t("acc.daysUnavailable")
+      : t("acc.protectionDaysLeft", { n: remaining, count: remaining });
+  // 布尔而非 "On"/"Off" 字符串：文案会随语言变化，调用方必须判布尔。
+  const on = Boolean(account.streakProtectionEnabled);
   const streak =
     account.streakCounter == null
-      ? "streak unavailable"
-      : `${U.fmtNumber(account.streakCounter)} day${account.streakCounter === 1 ? "" : "s"} current streak`;
+      ? t("acc.streakUnavailable")
+      : t("acc.currentStreakDays", {
+        n: U.fmtNumber(account.streakCounter),
+        count: account.streakCounter,
+      });
 
   return {
-    state,
+    on,
+    stateLabel: on ? t("acc.protOn") : t("acc.protOff"),
     days,
     streak,
     pillClass:
@@ -112,45 +119,72 @@ function detailGroups(a, protection) {
   const groups = [];
 
   groups.push([
-    "Configuration",
+    t("acc.groupConfig"),
     [
-      ["Configured in .env", a.configured ? "Yes" : "No \u2014 seen in logs only"],
-      ...(a.geoLocale ? [["Geo locale", a.geoLocale]] : []),
-      ...(a.langCode ? [["Language", a.langCode]] : []),
-      ...(a.hasTotp != null ? [["TOTP secret", a.hasTotp ? "Set" : "Not set"]] : []),
+      [
+        t("acc.configuredInEnv"),
+        a.configured ? t("acc.yes") : t("acc.noLogsOnly"),
+      ],
+      ...(a.geoLocale ? [[t("acc.geoLocale"), a.geoLocale]] : []),
+      ...(a.langCode ? [[t("acc.language"), a.langCode]] : []),
+      ...(a.hasTotp != null
+        ? [[t("acc.totpSecret"), a.hasTotp ? t("acc.set") : t("acc.notSet")]]
+        : []),
       ...(a.hasRecoveryEmail != null
-        ? [["Recovery email", a.hasRecoveryEmail ? "Set" : "Not set"]]
+        ? [
+          [
+            t("acc.recoveryEmail"),
+            a.hasRecoveryEmail ? t("acc.set") : t("acc.notSet"),
+          ],
+        ]
         : []),
       [
-        "Proxy",
+        t("acc.proxy"),
         a.proxy
-          ? `${a.proxy.url}${a.proxy.port ? `:${a.proxy.port}` : ""}${a.proxy.hasCredentials ? " (authenticated)" : ""}`
-          : "None",
+          ? `${a.proxy.url}${a.proxy.port ? `:${a.proxy.port}` : ""}${a.proxy.hasCredentials ? t("acc.proxyAuthed") : ""}`
+          : t("acc.none"),
       ],
     ],
   ]);
 
   groups.push([
-    "Streak &amp; protection",
+    t("acc.groupStreak"),
     [
-      ["Success streak", `${a.successStreak} run${a.successStreak === 1 ? "" : "s"}`],
+      [
+        t("acc.successStreak"),
+        t("acc.runsCount", { n: a.successStreak, count: a.successStreak }),
+      ],
       ...(protection
         ? [
           [
-            "Current streak",
+            t("acc.currentStreak"),
             a.streakCounter == null
-              ? "Unavailable"
-              : `${U.fmtNumber(a.streakCounter)} day${a.streakCounter === 1 ? "" : "s"}`,
+              ? t("acc.unavailable")
+              : t("acc.days", {
+                n: U.fmtNumber(a.streakCounter),
+                count: a.streakCounter,
+              }),
           ],
-          ["Streak protection", protection.state === "On" ? "Enabled" : "Disabled"],
           [
-            "Protection days remaining",
+            t("acc.streakProtection"),
+            protection.on ? t("acc.enabled") : t("acc.disabled"),
+          ],
+          [
+            t("acc.protectionDaysRemaining"),
             a.streakProtectionRemainingDays == null
-              ? "Unavailable"
-              : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"}`,
+              ? t("acc.unavailable")
+              : t("acc.days", {
+                n: a.streakProtectionRemainingDays,
+                count: a.streakProtectionRemainingDays,
+              }),
           ],
           ...(a.streakProtectionUpdatedAt
-            ? [["Protection status checked", U.fmtRelative(a.streakProtectionUpdatedAt)]]
+            ? [
+              [
+                t("acc.protectionChecked"),
+                U.fmtRelative(a.streakProtectionUpdatedAt),
+              ],
+            ]
             : []),
         ]
         : []),
@@ -158,12 +192,12 @@ function detailGroups(a, protection) {
   ]);
 
   groups.push([
-    "Run history",
+    t("acc.groupHistory"),
     [
-      ["Runs recorded by the API", U.fmtNumber(a.apiRuns)],
-      ["Points collected (API history)", U.fmtSigned(a.apiTotalCollected)],
-      ["Last duration", U.fmtDuration(a.lastDurationSec)],
-      ["History points loaded", U.fmtNumber(a.historyCount)],
+      [t("acc.apiRuns"), U.fmtNumber(a.apiRuns)],
+      [t("acc.apiCollected"), U.fmtSigned(a.apiTotalCollected)],
+      [t("acc.lastDuration"), U.fmtDuration(a.lastDurationSec)],
+      [t("acc.historyPoints"), U.fmtNumber(a.historyCount)],
     ],
   ]);
 
@@ -185,7 +219,7 @@ function statusIconParts(statusKey) {
   switch (statusKey) {
     case "success":
     case "done":
-      return { cls: "stat-icon-check", icon: "\u2713", label: "Success" };
+      return { cls: "stat-icon-check", icon: "\u2713", label: U.pillParts("success").label };
     case "running":
     case "starting":
     case "stopping":
@@ -198,7 +232,7 @@ function statusIconParts(statusKey) {
     case "stopped":
       return { cls: "stat-icon-alert icon-alert-active", icon: "!", label: U.pillParts(statusKey).label };
     default:
-      return { cls: "stat-icon-idle", icon: "\u2013", label: "Idle" };
+      return { cls: "stat-icon-idle", icon: "\u2013", label: U.pillParts("idle").label };
   }
 }
 
@@ -225,14 +259,31 @@ function renderAccountPanel(a, live) {
   const runButton =
     a.configured && Number.isInteger(a.index)
       ? `<button type="button" class="btn btn-primary btn-small" data-run-account="${a.index}" ${!usable || running || launching.has(a.index) ? "disabled" : ""
-      } title="Run only ACCOUNT_${a.index}">${launching.has(a.index) ? "Starting\u2026" : "Run only"}</button>`
+      } title="${U.escapeAttr(t("ovw.runOnlyTitle", { index: a.index }))}">${U.escapeHtml(launching.has(a.index) ? t("ovw.starting") : t("ovw.runOnly"))}</button>`
       : "";
 
   const { cls: statusIconCls, icon: statusIcon, label: statusLabel } = statusIconParts(statusKey);
 
   const chips = [
     protection
-      ? `<span class="pill ${protection.pillClass}" title="${U.escapeAttr(protection.streak)}; streak protection is ${protection.state.toLowerCase()}; ${U.escapeAttr(protection.days)}">Protection ${protection.state} \u00b7 ${a.streakProtectionRemainingDays == null ? "days unavailable" : `${a.streakProtectionRemainingDays} day${a.streakProtectionRemainingDays === 1 ? "" : "s"} left`}</span>`
+      ? `<span class="pill ${protection.pillClass}" title="${U.escapeAttr(
+        t("acc.protectionPillTitle", {
+          streak: protection.streak,
+          state: protection.stateLabel,
+          days: protection.days,
+        }),
+      )}">${U.escapeHtml(
+        t("acc.protectionPill", {
+          state: protection.stateLabel,
+          days:
+            a.streakProtectionRemainingDays == null
+              ? t("acc.daysUnavailable")
+              : t("acc.daysLeft", {
+                n: a.streakProtectionRemainingDays,
+                count: a.streakProtectionRemainingDays,
+              }),
+        }),
+      )}</span>`
       : "",
     earnableBadge(live || {}),
     sourceBreakdown(live || {}),
@@ -245,7 +296,7 @@ function renderAccountPanel(a, live) {
         <div class="panel-head">
             <h2><span class="acc-status-icon ${statusIconCls}" role="img" aria-label="${U.escapeAttr(statusLabel)}" title="${U.escapeAttr(statusLabel)}">${statusIcon}</span>${U.escapeHtml(a.email)}</h2>
             ${a.index != null ? `<span class="tag-mini acc-tag-account-id">ACCOUNT_${a.index}</span>` : ""}
-            ${a.configured ? "" : '<span class="tag-mini">unconfigured</span>'}
+            ${a.configured ? "" : `<span class="tag-mini">${U.escapeHtml(t("ovw.unconfigured"))}</span>`}
             <span class="acc-detail-actions">
                 <span class="acc-status-pill">${U.statusPill(statusKey)}</span>
                 ${runButton}
@@ -255,7 +306,7 @@ function renderAccountPanel(a, live) {
             ${detailGroups(a, protection)}
         </div>
         ${chips ? `<div class="account-today-row">
-            <span class="account-today-label">Today</span>
+            <span class="account-today-label">${U.escapeHtml(t("acc.today"))}</span>
             <div class="account-today-chips">${chips}</div>
         </div>` : ""}
     </div>`;
@@ -276,7 +327,7 @@ function render(root) {
   }
 
   if (!accounts.length) {
-    container.innerHTML = '<p class="empty-note" style="padding:1.25rem">No accounts configured or observed yet.</p>';
+    container.innerHTML = `<p class="empty-note" style="padding:1.25rem">${U.escapeHtml(t("ovw.noAccounts"))}</p>`;
     return;
   }
 
@@ -305,10 +356,9 @@ export default {
     root.innerHTML = `
       <p class="notice notice--warn" id="accountsError" hidden></p>
       <div id="accountsContainer">
-          <p class="empty-note" style="padding:1.25rem">Loading accounts configuration details&hellip;</p>
+          <p class="empty-note" style="padding:1.25rem">${U.escapeHtml(t("acc.loading"))}</p>
       </div>
-      <p class="hint" style="margin-top: 1.5rem;">Accounts are configured in the bot&rsquo;s <code>.env</code> (<code>ACCOUNT_N_*</code>).
-      The control API exposes full local email addresses but never sends passwords, recovery addresses, TOTP secrets, or proxy credentials.</p>
+      <p class="hint" style="margin-top: 1.5rem;">${t("acc.hint")}</p>
     `;
     mounted = true;
   },

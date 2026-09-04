@@ -1,5 +1,6 @@
 import * as U from "../util.js";
 import { cached } from "../api.js";
+import { t } from "../i18n.js";
 import { barChart } from "../charts.js";
 
 let rootEl = null;
@@ -35,10 +36,13 @@ function renderChart() {
   const total = bars.reduce((sum, b) => sum + b.value, 0);
   const active = bars.filter((b) => b.value > 0).length;
 
-  U.$("#runsChartMeta", rootEl).textContent =
-    `${U.fmtSigned(total)} points over ${days} days \u00b7 ${active} day${active === 1 ? "" : "s"} with a run`;
+  U.$("#runsChartMeta", rootEl).textContent = t("runs.chartMeta", {
+    days,
+    total: U.fmtSigned(total),
+    active,
+  });
   barChart(U.$("#runsChart", rootEl), bars, {
-    emptyMessage: "No point history recorded yet.",
+    emptyMessage: t("runs.noHistory"),
   });
 }
 
@@ -61,8 +65,7 @@ function renderRuns() {
   const body = U.$("#runsBody", rootEl);
 
   if (!runs.length) {
-    body.innerHTML =
-      '<tr><td colspan="7" class="empty-note">No runs recorded yet.</td></tr>';
+    body.innerHTML = `<tr><td colspan="7" class="empty-note">${U.escapeHtml(t("runs.noRuns"))}</td></tr>`;
     return;
   }
 
@@ -91,10 +94,11 @@ function renderRuns() {
 
 function exitPill(exit) {
   if (!exit) return U.statusPill("idle");
-  if (exit.code === 0) return '<span class="pill pill-success">Exit 0</span>';
+  if (exit.code === 0)
+    return `<span class="pill pill-success">${U.escapeHtml(t("runs.exit0"))}</span>`;
   if (exit.signal)
     return `<span class="pill pill-warn">${U.escapeHtml(exit.signal)}</span>`;
-  return `<span class="pill pill-error">Exit ${U.escapeHtml(String(exit.code ?? "n/a"))}</span>`;
+  return `<span class="pill pill-error">${U.escapeHtml(t("runs.exitCode", { code: exit.code ?? t("runs.na") }))}</span>`;
 }
 
 function renderExits() {
@@ -106,8 +110,7 @@ function renderExits() {
     U.$("#exitsError", rootEl).textContent = runsPayload.apiError;
 
   if (!exits.length) {
-    list.innerHTML =
-      '<li class="empty-note">The control API hasn\u2019t recorded any runs yet. Runs it launches itself (manually or on a schedule) show up here.</li>';
+    list.innerHTML = `<li class="empty-note">${U.escapeHtml(t("runs.noExits"))}</li>`;
     return;
   }
 
@@ -124,7 +127,7 @@ function renderExits() {
             (a) => `<li class="runacc">
                             ${U.statusPill(a.success === false ? "error" : "success")}
                             <span class="runacc-email">${U.escapeHtml(a.email)}</span>
-                            <span class="runacc-detail">${U.escapeHtml(a.error ? a.error : `${U.fmtSigned(a.collected)} pts`)}</span>
+                            <span class="runacc-detail">${U.escapeHtml(a.error ? a.error : t("runs.accPts", { pts: U.fmtSigned(a.collected) }))}</span>
                           </li>`,
           )
           .join("")}</ul>`
@@ -134,7 +137,18 @@ function renderExits() {
                 <button type="button" class="exit-head" data-exit="${i}" aria-expanded="${isOpen}">
                     ${exitPill(run.exit)}
                     <span class="exit-when">${U.escapeHtml(U.fmtDateTime(run.endedAt || run.startedAt))}</span>
-                    <span class="exit-meta">${U.fmtSigned(run.collected || 0)} pts \u00b7 ${ok} ok${failed ? ` \u00b7 ${failed} failed` : ""}</span>
+                    <span class="exit-meta">${U.escapeHtml(
+                      failed
+                        ? t("runs.exitMetaFailed", {
+                          pts: U.fmtSigned(run.collected || 0),
+                          ok,
+                          failed,
+                        })
+                        : t("runs.exitMeta", {
+                          pts: U.fmtSigned(run.collected || 0),
+                          ok,
+                        }),
+                    )}</span>
                     <span class="exit-chevron" aria-hidden="true">${isOpen ? "\u25BE" : "\u25B8"}</span>
                 </button>
                 ${detail}
@@ -161,12 +175,12 @@ export default {
     root.innerHTML = `
             <section class="panel" aria-labelledby="runs-chart-heading">
                 <div class="panel-head">
-                    <h2 id="runs-chart-heading">Points per day</h2>
+                    <h2 id="runs-chart-heading">${U.escapeHtml(t("runs.chartTitle"))}</h2>
                     <span class="panel-sub" id="runsChartMeta"></span>
-                    <div class="seg" role="group" aria-label="Date range">
-                        <button type="button" class="seg-btn" data-days="14">14d</button>
-                        <button type="button" class="seg-btn seg-btn--active" data-days="30">30d</button>
-                        <button type="button" class="seg-btn" data-days="90">90d</button>
+                    <div class="seg" role="group" aria-label="${U.escapeAttr(t("runs.rangeLabel"))}">
+                        <button type="button" class="seg-btn" data-days="14">${U.escapeHtml(t("runs.d14"))}</button>
+                        <button type="button" class="seg-btn seg-btn--active" data-days="30">${U.escapeHtml(t("runs.d30"))}</button>
+                        <button type="button" class="seg-btn" data-days="90">${U.escapeHtml(t("runs.d90"))}</button>
                     </div>
                 </div>
                 <div id="runsChart" class="chart-wrap"></div>
@@ -174,15 +188,15 @@ export default {
 
             <section class="panel" aria-labelledby="runs-table-heading">
                 <div class="panel-head">
-                    <h2 id="runs-table-heading">Run history</h2>
-                    <span class="panel-sub">Parsed from the bot&rsquo;s own log output</span>
+                    <h2 id="runs-table-heading">${U.escapeHtml(t("runs.historyTitle"))}</h2>
+                    <span class="panel-sub">${t("runs.historySub")}</span>
                 </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
-                                <th>Status</th><th>Started</th><th>Duration</th>
-                                <th>Accounts</th><th>Gained</th><th>New total</th><th>Version</th>
+                                <th>${U.escapeHtml(t("runs.thStatus"))}</th><th>${U.escapeHtml(t("runs.thStarted"))}</th><th>${U.escapeHtml(t("runs.thDuration"))}</th>
+                                <th>${U.escapeHtml(t("runs.thAccounts"))}</th><th>${U.escapeHtml(t("runs.thGained"))}</th><th>${U.escapeHtml(t("runs.thNewTotal"))}</th><th>${U.escapeHtml(t("runs.thVersion"))}</th>
                             </tr>
                         </thead>
                         <tbody id="runsBody"></tbody>
@@ -192,8 +206,8 @@ export default {
 
             <section class="panel" aria-labelledby="exits-heading">
                 <div class="panel-head">
-                    <h2 id="exits-heading">Process exits</h2>
-                    <span class="panel-sub">How each run the control API launched actually ended</span>
+                    <h2 id="exits-heading">${U.escapeHtml(t("runs.exitsTitle"))}</h2>
+                    <span class="panel-sub">${U.escapeHtml(t("runs.exitsSub"))}</span>
                 </div>
                 <p class="notice notice--warn" id="exitsError" hidden></p>
                 <ul class="exit-list" id="exitList"></ul>

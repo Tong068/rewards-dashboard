@@ -10,6 +10,13 @@ import {
 
 import { api, invalidate } from "./api.js";
 import * as U from "./util.js";
+import {
+  t,
+  LOCALES,
+  getLocale,
+  setLocale,
+  applyStaticI18n,
+} from "./i18n.js";
 
 import overview from "./views/overview.js";
 import accounts from "./views/accounts.js";
@@ -20,10 +27,10 @@ import configView from "./views/config.js";
 import diagnostics from "./views/diagnostics.js";
 
 function initVersion() {
-  const version = window.APP_VERSION || "Development";
+  const version = window.APP_VERSION || t("app.development");
 
   if (els.footerVersion) {
-    els.footerVersion.textContent = `Microsoft Rewards Dashboard:${version}`;
+    els.footerVersion.textContent = t("app.dashVersion", { version });
   }
 }
 
@@ -43,6 +50,7 @@ const els = {
   modeToggle: U.$("#modeToggle"),
   modeIcon: U.$("#modeIcon"),
   themeSelect: U.$("#themeSelect"),
+  localeSelect: U.$("#localeSelect"),
   tabBar: U.$("#tabBar"),
   tabPanels: U.$("#tabPanels"),
   ctlPill: U.$("#ctlPill"),
@@ -88,13 +96,13 @@ const ctx = {
 let currentThemeId = null;
 let currentMode = "light";
 
-const findTheme = (id) => themes.find((t) => t.id === id) || themes[0] || null;
+const findTheme = (id) =>
+  themes.find((theme) => theme.id === id) || themes[0] || null;
 
 function setMode(mode, persist) {
   currentMode = mode;
   els.modeIcon.textContent = mode === "dark" ? "\u2600" : "\u263D";
-  const label =
-    mode === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const label = mode === "dark" ? t("app.toLight") : t("app.toDark");
   els.modeToggle.setAttribute("aria-label", label);
   els.modeToggle.title = label;
   if (persist) setStoredMode(mode);
@@ -116,8 +124,8 @@ function initTheme() {
   if (!themes.length) return;
   els.themeSelect.innerHTML = themes
     .map(
-      (t) =>
-        `<option value="${U.escapeAttr(t.id)}">${U.escapeHtml(t.name)}</option>`,
+      (theme) =>
+        `<option value="${U.escapeAttr(theme.id)}">${U.escapeHtml(theme.name)}</option>`,
     )
     .join("");
 
@@ -137,12 +145,24 @@ function initTheme() {
   );
 }
 
+// 语言。切换后 setLocale() 会整页刷新，所以这里只管填下拉框。
+function initLocale() {
+  if (!els.localeSelect) return;
+  els.localeSelect.innerHTML = LOCALES.map(
+    (loc) =>
+      `<option value="${U.escapeAttr(loc.id)}" ${loc.id === getLocale() ? "selected" : ""}>${U.escapeHtml(loc.name)}</option>`,
+  ).join("");
+  els.localeSelect.addEventListener("change", () =>
+    setLocale(els.localeSelect.value),
+  );
+}
+
 // tabs
 
 function initTabs() {
   els.tabBar.innerHTML = VIEWS.map(
     (v) => `<button type="button" role="tab" class="tab" id="tab-btn-${v.id}"
-                 aria-controls="tab-panel-${v.id}" aria-selected="false" data-tab="${v.id}">${U.escapeHtml(v.label)}</button>`,
+                 aria-controls="tab-panel-${v.id}" aria-selected="false" data-tab="${v.id}">${U.escapeHtml(t(`nav.${v.id}`))}</button>`,
   ).join("");
 
   els.tabPanels.innerHTML = VIEWS.map(
@@ -242,7 +262,7 @@ function connectStream() {
 
   es.addEventListener("reset", () => {
     for (const v of VIEWS) v.onReset?.(ctx);
-    U.toast("Control API restarted — reconnected.", "warn");
+    U.toast(t("app.apiRestarted"), "warn");
   });
 
   es.onerror = () => {
@@ -274,22 +294,22 @@ function renderStatusBadge() {
 
   if (!state.streamOpen && !s) {
     badge.classList.add("status-down");
-    els.statusText.textContent = "Dashboard server unreachable";
+    els.statusText.textContent = t("app.serverUnreachable");
   } else if (!s) {
     badge.classList.add("status-unknown");
-    els.statusText.textContent = "Connecting\u2026";
+    els.statusText.textContent = t("app.connecting");
   } else if (!s.reachable) {
     badge.classList.add("status-down");
-    els.statusText.textContent = "Bot backend offline";
+    els.statusText.textContent = t("app.botOffline");
   } else if (s.authOk === false) {
     badge.classList.add("status-warn");
-    els.statusText.textContent = "Control API token rejected";
+    els.statusText.textContent = t("app.tokenRejected");
   } else if (s.botRunning) {
     badge.classList.add("status-live");
-    els.statusText.textContent = "Running now";
+    els.statusText.textContent = t("app.runningNow");
   } else {
     badge.classList.add("status-live");
-    els.statusText.textContent = "Connected";
+    els.statusText.textContent = t("app.connected");
   }
   badge.title = s?.lastError || "";
 }
@@ -304,15 +324,15 @@ function renderFooter() {
 
     footerStatus.textContent =
         !s
-            ? "Connecting…"
+            ? t("app.connecting")
             : !s.reachable
-                ? "Disconnected"
+                ? t("app.disconnected")
                 : s.botRunning
-                    ? "Running"
-                    : "Connected";
+                    ? t("app.running")
+                    : t("app.connected");
 
     footerScriptVersion.textContent =
-        `Microsoft Rewards Script:${s?.version || "\u2013"}`;
+        t("app.scriptVersion", { version: s?.version || "\u2013" });
 }
 
 function renderControlStrip() {
@@ -329,24 +349,34 @@ function renderControlStrip() {
 
   const bot = s?.bot;
   const bits = [];
-  if (running && bot?.pid) bits.push(`pid ${bot.pid}`);
+  if (running && bot?.pid) bits.push(t("app.ctlPid", { pid: bot.pid }));
   if (running && bot?.startedAt)
-    bits.push(`started ${U.fmtRelative(bot.startedAt)}`);
+    bits.push(t("app.ctlStarted", { when: U.fmtRelative(bot.startedAt) }));
   if (bot?.run?.accountsTotal)
-    bits.push(`${bot.run.accountsSeen || 0}/${bot.run.accountsTotal} accounts`);
+    bits.push(
+      t("app.ctlAccounts", {
+        seen: bot.run.accountsSeen || 0,
+        total: bot.run.accountsTotal,
+      }),
+    );
   if (running && bot?.run?.collected != null)
-    bits.push(`${U.fmtSigned(bot.run.collected)} pts`);
+    bits.push(t("app.ctlPts", { pts: U.fmtSigned(bot.run.collected) }));
   if (!running && s?.schedule?.enabled && s.schedule.nextRunAt) {
-    bits.push(`next run ${U.fmtDateTime(s.schedule.nextRunAt)}`);
+    bits.push(
+      t("app.ctlNextRun", { when: U.fmtDateTime(s.schedule.nextRunAt) }),
+    );
   }
   if (!running && !bits.length && bot?.lastExit) {
     bits.push(
-      `last exit: code ${bot.lastExit.code ?? "n/a"}${bot.lastExit.signal ? ` / ${bot.lastExit.signal}` : ""}`,
+      t("app.ctlLastExit", {
+        code: `${bot.lastExit.code ?? t("runs.na")}${bot.lastExit.signal ? ` / ${bot.lastExit.signal}` : ""}`,
+      }),
     );
   }
   U.renderTicker(
     els.ctlDetail,
-    bits.join(" \u00b7 ") || (usable ? "Ready" : "Control API unavailable"),
+    bits.join(" \u00b7 ") ||
+    (usable ? t("app.ready") : t("app.apiUnavailable")),
   );
 
   els.btnStart.disabled = !usable || running;
@@ -360,7 +390,7 @@ async function control(action, body, { confirm: confirmMsg, success } = {}) {
   if (confirmMsg && !window.confirm(confirmMsg)) return;
   try {
     await api.control(action, body || {});
-    U.toast(success || `${action} sent.`, "success");
+    U.toast(success || t("app.actionSent", { action }), "success");
   } catch (e) {
     U.toast(e.message, e.status === 409 ? "warn" : "error");
   }
@@ -368,18 +398,18 @@ async function control(action, body, { confirm: confirmMsg, success } = {}) {
 
 function initControls() {
   els.btnStart.addEventListener("click", () =>
-    control("start", {}, { success: "Run started." }),
+    control("start", {}, { success: t("app.runStarted") }),
   );
   els.btnStop.addEventListener("click", () =>
-    control("stop", { force: false }, { success: "Stop signal sent." }),
+    control("stop", { force: false }, { success: t("app.stopSent") }),
   );
   els.btnRestart.addEventListener("click", () =>
     control(
       "restart",
       {},
       {
-        confirm: "Restart the bot? A run in progress will be stopped first.",
-        success: "Restarting\u2026",
+        confirm: t("app.confirmRestart"),
+        success: t("app.restarting"),
       },
     ),
   );
@@ -389,8 +419,8 @@ function initControls() {
       "stop",
       { force: true },
       {
-        confirm: "Force-kill the run (SIGKILL)? It gets no chance to clean up.",
-        success: "Force stop sent.",
+        confirm: t("app.confirmForceStop"),
+        success: t("app.forceStopSent"),
       },
     );
   });
@@ -400,9 +430,8 @@ function initControls() {
       "shutdown",
       {},
       {
-        confirm:
-          "Shut the control API down? The dashboard will go offline until you start it again on the bot host.",
-        success: "Shutdown sent.",
+        confirm: t("app.confirmShutdown"),
+        success: t("app.shutdownSent"),
       },
     );
   });
@@ -433,10 +462,7 @@ function setCodes(codes) {
   const fresh = codes.filter((c) => !knownCodeKeys.has(codeKey(c)));
   if (fresh.length) {
     els.loginCodesAnnounce.textContent = fresh
-      .map(
-        (c) =>
-          `Login approval needed for ${c.userName}: select number ${c.number}. Expires in 60 seconds.`,
-      )
+      .map((c) => t("app.codeAnnounce", { user: c.userName, number: c.number }))
       .join(" ");
   }
   knownCodeKeys = new Set(codes.map(codeKey));
@@ -459,7 +485,7 @@ function renderCodes() {
                     <div class="login-code-number">${U.escapeHtml(c.number)}</div>
                     <div class="login-code-info">
                         <span class="login-code-name">${U.escapeHtml(c.userName)}</span>
-                        <span class="login-code-countdown ${secsLeft <= 15 ? "urgent" : ""}">Expires in ${secsLeft}s</span>
+                        <span class="login-code-countdown ${secsLeft <= 15 ? "urgent" : ""}">${U.escapeHtml(t("app.codeExpires", { secs: secsLeft }))}</span>
                     </div>
                 </div>`;
     })
@@ -468,6 +494,8 @@ function renderCodes() {
 
 // init
 
+applyStaticI18n();
+initLocale();
 initVersion();
 initTheme();
 initControls();

@@ -1,3 +1,5 @@
+import { t, intlLocale } from "./i18n.js";
+
 export function escapeHtml(str) {
   if (str == null) return "";
   return String(str)
@@ -31,40 +33,49 @@ const DASH = "\u2013";
 
 export function fmtNumber(n) {
   if (n == null || Number.isNaN(n)) return DASH;
-  return Number(n).toLocaleString();
+  return Number(n).toLocaleString(intlLocale());
 }
 
 export function fmtSigned(n) {
   if (n == null || Number.isNaN(n)) return DASH;
-  return (n > 0 ? "+" : "") + Number(n).toLocaleString();
+  return (n > 0 ? "+" : "") + Number(n).toLocaleString(intlLocale());
 }
 
+// 全站统一 24 小时制（hourCycle: "h23"），中英文都一样。
 export function fmtDateTime(iso) {
   if (!iso) return DASH;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return DASH;
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(intlLocale(), {
     month: "short",
     day: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
 }
 
+// 日期和时间分开取再用 ", " 拼接：logs.js 依赖这个逗号把两段拆开显示，
+// 而各语言 toLocaleString 的默认分隔符并不一致（中文里根本没有逗号）。
 export function fmtTime(iso) {
   if (!iso) return DASH;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return DASH;
-  return d.toLocaleString("en-US", {
-    timeZone: timeZone || undefined,
+  const tz = timeZone || undefined;
+  const datePart = d.toLocaleDateString(intlLocale(), {
+    timeZone: tz,
     year: "numeric",
     month: "numeric",
     day: "numeric",
-    hour: "numeric",
+  });
+  const timePart = d.toLocaleTimeString(intlLocale(), {
+    timeZone: tz,
+    hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: true,
+    hourCycle: "h23",
   });
+  return `${datePart}, ${timePart}`;
 }
 
 export function fmtRelative(iso) {
@@ -72,26 +83,27 @@ export function fmtRelative(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return DASH;
   const mins = Math.round((Date.now() - d.getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t("time.justNow");
+  if (mins < 60) return t("time.minsAgo", { n: mins });
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 24) return t("time.hoursAgo", { n: hours });
+  return t("time.daysAgo", { n: Math.round(hours / 24) });
 }
 
 export function fmtDuration(sec) {
   if (sec == null || Number.isNaN(sec)) return DASH;
-  if (sec < 60) return `${Math.round(sec)}s`;
+  if (sec < 60) return t("time.sec", { n: Math.round(sec) });
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
-  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+  if (m < 60)
+    return s ? t("time.minSec", { n: m, s }) : t("time.min", { n: m });
   const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  return t("time.hourMin", { h, m: m % 60 });
 }
 
 export function fmtUptime(sec) {
   if (sec == null) return DASH;
-  if (sec < 60) return `${Math.round(sec)}s`;
+  if (sec < 60) return t("time.sec", { n: Math.round(sec) });
   return fmtDuration(sec);
 }
 
@@ -128,7 +140,7 @@ export function isoWeekStartKey(year, month, day) {
 
 export function localDateLabel(key, options) {
   const [y, m, d] = key.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, options);
+  return new Date(y, m - 1, d).toLocaleDateString(intlLocale(), options);
 }
 
 export function bucketByDay(history) {
@@ -278,26 +290,27 @@ export function debounce(fn, ms = 250) {
   };
 }
 
+// 状态 → [CSS 类, 文案 key]。文案在 pillParts() 里按当前语言取。
 const PILLS = {
-  success: ["pill-success", "Success"],
-  done: ["pill-success", "Done"],
-  error: ["pill-error", "Error"],
-  crashed: ["pill-error", "Crashed"],
-  interrupted: ["pill-warn", "Interrupted"],
-  stopped: ["pill-warn", "Stopped"],
-  running: ["pill-running", "Running"],
-  starting: ["pill-running", "Starting"],
-  stopping: ["pill-warn", "Stopping"],
-  pending: ["pill-pending", "Pending"],
-  idle: ["pill-idle", "Idle"],
+  success: ["pill-success", "pill.success"],
+  done: ["pill-success", "pill.done"],
+  error: ["pill-error", "pill.error"],
+  crashed: ["pill-error", "pill.crashed"],
+  interrupted: ["pill-warn", "pill.interrupted"],
+  stopped: ["pill-warn", "pill.stopped"],
+  running: ["pill-running", "pill.running"],
+  starting: ["pill-running", "pill.starting"],
+  stopping: ["pill-warn", "pill.stopping"],
+  pending: ["pill-pending", "pill.pending"],
+  idle: ["pill-idle", "pill.idle"],
 };
 
 export function pillParts(status) {
-  const [cls, label] = PILLS[status] || PILLS.idle;
-  return { cls, label };
+  const [cls, key] = PILLS[status] || PILLS.idle;
+  return { cls, label: t(key) };
 }
 
 export function statusPill(status) {
   const { cls, label } = pillParts(status);
-  return `<span class="pill ${cls}">${label}</span>`;
+  return `<span class="pill ${cls}">${escapeHtml(label)}</span>`;
 }

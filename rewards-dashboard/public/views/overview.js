@@ -1,5 +1,6 @@
 import * as U from "../util.js";
 import { cached } from "../api.js";
+import { t } from "../i18n.js";
 // Import BOTH chart builders
 import { buildAccumBarHtml, buildHeatmapHtml, lineChart } from "../charts.js";
 
@@ -63,7 +64,7 @@ function activeSchedule(status) {
     };
   }
   return {
-    description: local?.description || remote?.description || "Not scheduled",
+    description: local?.description || remote?.description || t("ovw.notScheduled"),
     enabled: false,
     timezone: status?.timezone || "UTC",
   };
@@ -85,7 +86,7 @@ function pendingDelayLabel(pendingDelay) {
   const who = pendingDelay.nextEmail
     ? ` (${pendingDelay.nextEmail.split("@")[0]})`
     : "";
-  return `next account in ~${remaining}s${who}`;
+  return t("ovw.nextAccountIn", { secs: remaining, who });
 }
 
 function controlState() {
@@ -103,7 +104,7 @@ async function runAccount(account) {
   try {
     await context.api.control("start", { accountIndex: account.index });
     context.toast(
-      `Started ACCOUNT_${account.index} only (${account.email}).`,
+      t("ovw.startedOnly", { index: account.index, email: account.email }),
       "success",
     );
     context.invalidate();
@@ -127,22 +128,22 @@ function renderStats(root, status) {
   const sched = activeSchedule(status);
 
   U.$("#statGrid", root).innerHTML = [
-    statCard("statAccounts", U.fmtNumber(accounts.length), "profiles", "Accounts tracked"),
-    statCard("statCombined", U.fmtNumber(combined), "points", "Combined balance"),
-    statCard("statLastGained", lastRun ? U.fmtSigned(lastRun.totalGained) : "\u2013", "points", "Points earned last run"),
+    statCard("statAccounts", U.fmtNumber(accounts.length), t("ovw.unitProfiles"), t("ovw.statAccounts")),
+    statCard("statCombined", U.fmtNumber(combined), t("ovw.unitPoints"), t("ovw.statCombined")),
+    statCard("statLastGained", lastRun ? U.fmtSigned(lastRun.totalGained) : "\u2013", t("ovw.unitPoints"), t("ovw.statLastGained")),
     statCard(
       "statLastRun",
-      anyRunning ? "Running now" : lastRun ? U.fmtRelative(lastRun.endTs || lastRun.startTs) : "\u2013",
-      anyRunning ? "" : "timestamp",
-      "Last run",
+      anyRunning ? t("app.runningNow") : lastRun ? U.fmtRelative(lastRun.endTs || lastRun.startTs) : "\u2013",
+      anyRunning ? "" : t("ovw.unitTimestamp"),
+      t("ovw.statLastRun"),
       anyRunning ? "stat-icon-running" : "stat-icon-check",
       anyRunning ? "\u25CF" : "\u2713",
     ),
     statCard(
       "statErrors",
       U.fmtNumber(errorCount),
-      "errors",
-      "Accounts in error",
+      t("ovw.unitErrors"),
+      t("ovw.statErrors"),
       errorCount > 0 ? "stat-icon-alert icon-alert-active" : "stat-icon-check",
       errorCount > 0 ? "!" : "\u2713",
     ),
@@ -150,7 +151,7 @@ function renderStats(root, status) {
       "statSchedule",
       U.escapeHtml(sched.description || "\u2013"),
       sched.timezone || "UTC",
-      sched.both ? "Schedule (2 active)" : "Schedule",
+      sched.both ? t("ovw.statScheduleBoth") : t("ovw.statSchedule"),
       sched.both ? "stat-icon-alert icon-alert-active" : sched.enabled ? "stat-icon-check" : "stat-icon-idle",
       sched.both ? "!" : sched.enabled ? "\u2713" : "\u2013",
     ),
@@ -170,7 +171,7 @@ function renderAccountRows(root) {
   }
 
   if (!accounts.length) {
-    container.innerHTML = '<p class="empty-note" style="padding:1.25rem">No accounts configured or observed yet.</p>';
+    container.innerHTML = `<p class="empty-note" style="padding:1.25rem">${U.escapeHtml(t("ovw.noAccounts"))}</p>`;
     return;
   }
 
@@ -202,7 +203,7 @@ function renderAccountRows(root) {
   container.innerHTML = accounts
     .map((a) => {
       const days = daysByKey[a.key] || null;
-      let barCell = '<p class="empty-note" style="font-size:0.78rem;margin:0">No history yet</p>';
+      let barCell = `<p class="empty-note" style="font-size:0.78rem;margin:0">${U.escapeHtml(t("ovw.noHistory"))}</p>`;
       
       if (days) {
         // Toggle view logic
@@ -222,10 +223,10 @@ function renderAccountRows(root) {
 
       const todayText =
         todayGained != null
-          ? `+${todayGained.toLocaleString()}\u202fpts today`
+          ? t("ovw.todayGained", { pts: U.fmtNumber(todayGained) })
           : a.status === "running"
-            ? "Running\u2026"
-            : "No run today";
+            ? t("ovw.runningEllipsis")
+            : t("ovw.noRunToday");
 
       const accountHistory = histories[a.key] || [];
       let lastGain = null;
@@ -239,22 +240,22 @@ function renderAccountRows(root) {
 
       const sub =
         a.status === "running"
-          ? `<span class="hero-sub-running">Running\u2026 ${U.escapeHtml(U.fmtRelative(a.lastStartAt))}</span>`
-          : `Last Run: ${U.escapeHtml(U.fmtRelative(a.lastEndAt || a.lastStartAt))}${
-              dur ? ` \u00b7 <span title="Last run duration">⏱ ${U.escapeHtml(dur)}</span>` : ""
-            }${lastGain != null ? ` \u00b7 <span class="gain-val">${U.fmtSigned(lastGain)} pts</span>` : ""}`;
+          ? `<span class="hero-sub-running">${U.escapeHtml(t("ovw.runningSince", { when: U.fmtRelative(a.lastStartAt) }))}</span>`
+          : `${U.escapeHtml(t("ovw.lastRun", { when: U.fmtRelative(a.lastEndAt || a.lastStartAt) }))}${
+              dur ? ` \u00b7 <span title="${U.escapeAttr(t("ovw.durTitle"))}">⏱ ${U.escapeHtml(dur)}</span>` : ""
+            }${lastGain != null ? ` \u00b7 <span class="gain-val">${U.escapeHtml(t("ovw.gainPts", { pts: U.fmtSigned(lastGain) }))}</span>` : ""}`;
 
       return `<div class="hero-row">
             <div class="hero-bar-cell">${barCell}</div>
             <div class="hero-acc-card">
                 <div class="hero-acc-pts">
                     <span class="hero-pts-num">${a.lastPoints != null ? U.fmtNumber(a.lastPoints) : "\u2013"}</span>
-                    <span class="hero-pts-unit">Points</span>
+                    <span class="hero-pts-unit">${U.escapeHtml(t("ovw.points"))}</span>
                 </div>
                 <div class="hero-acc-info">
                     <div class="hero-acc-name">
                         ${MASK_EMAILS ? `ACCOUNT_${a.index}` : U.escapeHtml(a.email)}
-                        ${a.configured ? "" : ' <span class="tag-mini">unconfigured</span>'}
+                        ${a.configured ? "" : ` <span class="tag-mini">${U.escapeHtml(t("ovw.unconfigured"))}</span>`}
                     </div>
                     <div class="hero-acc-meta">
                         <span class="hero-acc-today">
@@ -268,10 +269,10 @@ function renderAccountRows(root) {
                 </div>
                 <div class="hero-acc-actions">
                     ${a.configured && Number.isInteger(a.index)
-                      ? `<button type="button" class="link-btn" data-run-account="${a.index}" ${!usable || running || launching.has(a.index) ? "disabled" : ""} title="Run only ACCOUNT_${a.index}">${launching.has(a.index) ? "Starting…" : "Run only"}</button>`
+                      ? `<button type="button" class="link-btn" data-run-account="${a.index}" ${!usable || running || launching.has(a.index) ? "disabled" : ""} title="${U.escapeAttr(t("ovw.runOnlyTitle", { index: a.index }))}">${U.escapeHtml(launching.has(a.index) ? t("ovw.starting") : t("ovw.runOnly"))}</button>`
                       : ""
                     }
-                    <button type="button" class="link-btn" data-trend="${U.escapeAttr(a.key)}" aria-pressed="${selected === a.key}">Trend</button>
+                    <button type="button" class="link-btn" data-trend="${U.escapeAttr(a.key)}" aria-pressed="${selected === a.key}">${U.escapeHtml(t("ovw.trend"))}</button>
                 </div>
             </div>
         </div>`;
@@ -327,7 +328,7 @@ function renderTrend() {
       value: h.points,
       label: U.fmtDateTime(h.ts),
     })),
-    { emptyMessage: "No point history recorded for this account yet." },
+    { emptyMessage: t("ovw.noTrend") },
   );
 }
 
@@ -367,17 +368,21 @@ function renderRunHeader(root, status) {
   const done = Math.min(doneCount, total);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  titleEl.textContent = active ? "Run in progress" : "Last run";
+  titleEl.textContent = active ? t("ovw.runInProgress") : t("ovw.lastRunTitle");
 
   U.renderTicker(
     metaEl,
     [
       run?.version ? `v${run.version}` : null,
-      total ? `${done}/${total} done` : `${seenCount} accounts seen`,
-      total && runningCount ? `${runningCount} running` : null,
-      total && pendingCount ? `${pendingCount} pending` : null,
-      run?.clusters != null ? `${run.clusters} cluster${run.clusters === 1 ? "" : "s"}` : null,
-      run?.collected != null ? `${U.fmtSigned(run.collected)} points` : null,
+      total
+        ? t("ovw.metaDone", { done, total })
+        : t("ovw.metaSeen", { n: seenCount }),
+      total && runningCount ? t("ovw.metaRunning", { n: runningCount }) : null,
+      total && pendingCount ? t("ovw.metaPending", { n: pendingCount }) : null,
+      run?.clusters != null ? t("ovw.metaClusters", { n: run.clusters }) : null,
+      run?.collected != null
+        ? t("ovw.metaCollected", { pts: U.fmtSigned(run.collected) })
+        : null,
       pendingDelayLabel(status?.pendingDelay),
     ]
       .filter(Boolean)
@@ -406,13 +411,13 @@ export default {
             <p class="notice notice--warn" id="ovwAccountsError" hidden></p>
 
             <section aria-labelledby="stats-heading" class="stats">
-                <h2 id="stats-heading" class="visually-hidden">Summary</h2>
+                <h2 id="stats-heading" class="visually-hidden">${U.escapeHtml(t("ovw.summary"))}</h2>
                 <div class="stat-grid" id="statGrid"></div>
             </section>
 
             <section class="panel run-progress-box" id="runProgressBox" aria-labelledby="run-progress-heading">
                 <div class="run-progress-header">
-                    <h2 class="run-progress-title" id="run-progress-heading">Run in progress</h2>
+                    <h2 class="run-progress-title" id="run-progress-heading">${U.escapeHtml(t("ovw.runInProgress"))}</h2>
                     <span id="currentRunMeta" class="run-progress-meta"></span>
                 </div>
                 <div class="progress" id="currentRunProgressWrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -423,22 +428,22 @@ export default {
             <section class="panel hero-panel" id="currentRun" aria-labelledby="current-run-heading">
                 <div class="hero-panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
                     <div>
-                        <h2 id="current-run-heading" style="margin:0;">Accounts Overview</h2>
+                        <h2 id="current-run-heading" style="margin:0;">${U.escapeHtml(t("ovw.accountsOverview"))}</h2>
                     </div>
                     <div class="seg" id="ovwViewToggle">
-                        <button type="button" class="seg-btn ${viewMode === 'accum' ? 'seg-btn--active' : ''}" data-view="accum">Timeline</button>
-                        <button type="button" class="seg-btn ${viewMode === 'heatmap' ? 'seg-btn--active' : ''}" data-view="heatmap">Heatmap</button>
+                        <button type="button" class="seg-btn ${viewMode === 'accum' ? 'seg-btn--active' : ''}" data-view="accum">${U.escapeHtml(t("ovw.viewTimeline"))}</button>
+                        <button type="button" class="seg-btn ${viewMode === 'heatmap' ? 'seg-btn--active' : ''}" data-view="heatmap">${U.escapeHtml(t("ovw.viewHeatmap"))}</button>
                     </div>
                 </div>
                 <div class="hero-layout" id="overviewHeroRows">
-                    <p class="empty-note" style="padding:1.25rem">Loading&hellip;</p>
+                    <p class="empty-note" style="padding:1.25rem">${t("ovw.loading")}</p>
                 </div>
             </section>
 
             <section class="panel" id="ovwTrendSection" hidden aria-labelledby="ovw-trend-heading">
                 <div class="panel-head">
-                    <h2 id="ovw-trend-heading">Point total &mdash; <span id="ovwTrendName"></span></h2>
-                    <span class="panel-sub">Every recorded balance, oldest to newest</span>
+                    <h2 id="ovw-trend-heading">${t("ovw.trendHeading")}<span id="ovwTrendName"></span></h2>
+                    <span class="panel-sub">${U.escapeHtml(t("ovw.trendSub"))}</span>
                 </div>
                 <div id="ovwTrendChart" class="chart-wrap"></div>
             </section>`;

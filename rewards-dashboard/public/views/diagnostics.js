@@ -1,5 +1,6 @@
 import * as U from "../util.js";
 import { cached } from "../api.js";
+import { t } from "../i18n.js";
 
 let rootEl = null;
 let context = null;
@@ -14,15 +15,18 @@ function render() {
   if (!rootEl || !payload) return;
 
   U.$("#diagMeta", rootEl).textContent = payload.dir
-    ? `${payload.count} capture${payload.count === 1 ? "" : "s"} in ${payload.dir}`
+    ? t("diag.meta", {
+      n: U.fmtNumber(payload.count),
+      dir: payload.dir,
+      count: payload.count,
+    })
     : "";
 
   const list = U.$("#diagList", rootEl);
   const entries = payload.entries || [];
 
   if (!entries.length) {
-    list.innerHTML =
-      '<li class="empty-note">No error captures \u2014 nothing has gone wrong badly enough to be worth a screenshot. Captures need <code>errorDiagnostics</code> enabled in the bot\u2019s config.</li>';
+    list.innerHTML = `<li class="empty-note">${t("diag.noCaptures")}</li>`;
     return;
   }
 
@@ -30,29 +34,32 @@ function render() {
     .map((entry) => {
       const isOpen = open === entry.name;
       const badges = [
-        entry.hasScreenshot ? '<span class="tag-mini">screenshot</span>' : "",
+        // error.txt / dump.html 是实际文件名，不翻译。
+        entry.hasScreenshot
+          ? `<span class="tag-mini">${U.escapeHtml(t("diag.tagScreenshot"))}</span>`
+          : "",
         entry.hasError ? '<span class="tag-mini">error.txt</span>' : "",
         entry.hasHtml ? '<span class="tag-mini">dump.html</span>' : "",
       ].join("");
 
       const firstLine =
         (entry.error || "").split("\n").find((l) => l.trim()) ||
-        "No error text captured.";
+        t("diag.noErrorText");
 
       const body = isOpen
         ? `<div class="diag-body">
                     ${entry.hasError
           ? `<pre class="diag-pre">${U.escapeHtml(entry.error || "")}</pre>`
-          : '<p class="empty-note">No error.txt in this capture.</p>'
+          : `<p class="empty-note">${U.escapeHtml(t("diag.noErrorTxt"))}</p>`
         }
                     ${entry.hasScreenshot
           ? `<a class="diag-shot" href="${U.escapeAttr(diagUrl(entry.name, "screenshot.png"))}" target="_blank" rel="noopener">
-                                 <img src="${U.escapeAttr(diagUrl(entry.name, "screenshot.png"))}" alt="Screenshot captured when ${U.escapeAttr(entry.name)} failed" loading="lazy">
+                                 <img src="${U.escapeAttr(diagUrl(entry.name, "screenshot.png"))}" alt="${U.escapeAttr(t("diag.shotAlt", { name: entry.name }))}" loading="lazy">
                                </a>`
           : ""
         }
                     ${entry.hasHtml
-          ? `<p><a class="btn btn-small" href="${U.escapeAttr(diagUrl(entry.name, "dump.html"))}" download>Download dump.html</a></p>`
+          ? `<p><a class="btn btn-small" href="${U.escapeAttr(diagUrl(entry.name, "dump.html"))}" download>${U.escapeHtml(t("diag.downloadDump"))}</a></p>`
           : ""
         }
                    </div>`
@@ -86,16 +93,14 @@ function diagUrl(name, file) {
 
 async function clearSession(email) {
   if (!context) return;
-  const confirmed = window.confirm(
-    `Clear stored sessions for ${email}?\n\nThis logs the account out immediately \u2014 it will need to sign back in (and re-approve 2FA if used) on its next run.`,
-  );
+  const confirmed = window.confirm(t("diag.confirmClear", { email }));
   if (!confirmed) return;
 
   clearing.add(email);
   renderSessions();
   try {
     await context.api.clearSession(email);
-    context.toast(`Sessions cleared for ${email}.`, "success");
+    context.toast(t("diag.cleared", { email }), "success");
     context.invalidate();
     await context.refresh();
   } catch (e) {
@@ -112,7 +117,7 @@ function renderSessions() {
   if (!list) return;
 
   if (!accountsPayload || !sessionsPayload) {
-    list.innerHTML = '<p class="empty-note" style="padding:1.25rem">Loading&hellip;</p>';
+    list.innerHTML = `<p class="empty-note" style="padding:1.25rem">${t("diag.loading")}</p>`;
     return;
   }
 
@@ -120,8 +125,7 @@ function renderSessions() {
     (a) => a.configured,
   );
   if (!accounts.length) {
-    list.innerHTML =
-      '<p class="empty-note" style="padding:1.25rem">No configured accounts found.</p>';
+    list.innerHTML = `<p class="empty-note" style="padding:1.25rem">${U.escapeHtml(t("diag.noAccounts"))}</p>`;
     return;
   }
 
@@ -142,16 +146,22 @@ function renderSessions() {
         (max, s) => (!max || s.updatedAt > max ? s.updatedAt : max),
         null,
       );
+      // meta \u4f1a\u539f\u6837\u63d2\u8fdb innerHTML\uff0c\u6240\u4ee5\u5e73\u53f0\u540d\u548c\u65f6\u95f4\u8981\u5148\u5404\u81ea\u8f6c\u4e49\u3002
       const meta = hasSessions
-        ? `${sessions.map((s) => U.escapeHtml(s.platform)).join(" \u00b7 ")} \u00b7 updated ${U.escapeHtml(U.fmtRelative(latest))}`
-        : "No stored sessions";
+        ? t("diag.sessionMeta", {
+          platforms: sessions
+            .map((s) => U.escapeHtml(s.platform))
+            .join(" \u00b7 "),
+          when: U.escapeHtml(U.fmtRelative(latest)),
+        })
+        : U.escapeHtml(t("diag.noSessions"));
 
       const isClearing = clearing.has(a.email);
       const disabled = !hasSessions || running || isClearing;
       const title = running
-        ? "The bot must be idle to clear a session"
+        ? t("diag.titleBusy")
         : !hasSessions
-          ? "Nothing stored for this account yet"
+          ? t("diag.titleEmpty")
           : "";
 
       return `<div class="session-card">
@@ -161,7 +171,7 @@ function renderSessions() {
                 </div>
                 <button type="button" class="btn btn-danger btn-small" data-clear-session="${U.escapeAttr(a.email)}"
                     ${disabled ? "disabled" : ""} ${title ? `title="${U.escapeAttr(title)}"` : ""}>
-                    ${isClearing ? "Clearing\u2026" : "Clear sessions"}
+                    ${U.escapeHtml(isClearing ? t("diag.clearing") : t("diag.clearSessions"))}
                 </button>
             </div>`;
     })
@@ -185,27 +195,25 @@ export default {
     root.innerHTML = `
             <section class="panel" aria-labelledby="sessions-heading">
                 <div class="panel-head">
-                    <h2 id="sessions-heading">Session management</h2>
-                    <span class="panel-sub">Clearing sessions can fix most common login issues</span>
+                    <h2 id="sessions-heading">${U.escapeHtml(t("diag.sessionsHeading"))}</h2>
+                    <span class="panel-sub">${U.escapeHtml(t("diag.sessionsSub"))}</span>
                 </div>
                 <p class="notice notice--warn">
-                    Clearing a session logs that account out immediately. It will need to sign in again
-                    &mdash; and re-approve 2FA if used &mdash; on its next run. Only clear a session if you're
-                    actually seeing login problems for that account.
+                    ${t("diag.sessionsNotice")}
                 </p>
                 <div class="session-card-list" id="sessionCardList">
-                    <p class="empty-note" style="padding:1.25rem">Loading&hellip;</p>
+                    <p class="empty-note" style="padding:1.25rem">${t("diag.loading")}</p>
                 </div>
             </section>
 
             <section class="panel" aria-labelledby="diag-heading">
                 <div class="panel-head">
-                    <h2 id="diag-heading">Error captures</h2>
+                    <h2 id="diag-heading">${U.escapeHtml(t("diag.capturesHeading"))}</h2>
                     <span class="panel-sub" id="diagMeta"></span>
-                    <button type="button" id="diagRefresh" class="btn btn-small">Refresh</button>
+                    <button type="button" id="diagRefresh" class="btn btn-small">${U.escapeHtml(t("diag.refresh"))}</button>
                 </div>
                 <ul class="diag-list" id="diagList">
-                    <li class="empty-note">Loading&hellip;</li>
+                    <li class="empty-note">${t("diag.loading")}</li>
                 </ul>
             </section>`;
 

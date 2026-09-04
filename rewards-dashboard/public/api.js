@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 async function call(method, path, body) {
   const opts = { method, headers: { Accept: "application/json" } };
   if (body !== undefined) {
@@ -9,7 +11,7 @@ async function call(method, path, body) {
   try {
     res = await fetch(path, opts);
   } catch {
-    throw new Error("Dashboard server unreachable");
+    throw new Error(t("api.serverUnreachable"));
   }
 
   const text = await res.text();
@@ -23,9 +25,11 @@ async function call(method, path, body) {
   }
 
   if (!res.ok) {
+    // 服务端给了 error/message 就用它的原文（通常含上游原始报错，翻译反而丢信息），
+    // 只有什么都没给时才用本地文案兜底。
     const err = new Error(
       (data && (data.error || data.message)) ||
-      `Request failed (${res.status})`,
+      t("api.requestFailed", { status: res.status }),
     );
     err.status = res.status;
     err.body = data;
